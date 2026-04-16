@@ -4,7 +4,7 @@
    SI formula :  SI = (P × R × T) / 100
    T unit     :  if "months", convert T → T / 12 before calc
    Tax rate   :  flat 30 % of SI (configurable via TAX_RATE)
-   API        :  POST /calculate to http://localhost:3000
+   Platform   :  Client-side calculation for GitHub Pages deployment
    ============================================================ */
 
 "use strict";
@@ -138,7 +138,7 @@ function validate() {
 /* ══════════════════════════════════════════════
    CORE CALCULATION
 ══════════════════════════════════════════════ */
-async function calculate() {
+function calculate() {
   if (!validate()) {
     showToast("Please fill in all fields with positive values.");
     return;
@@ -152,77 +152,46 @@ async function calculate() {
   // Convert months -> years if needed
   const T         = unit === "months" ? rawT / 12 : rawT;
 
-  try {
-    // Show loading state
-    btnCalculate.disabled = true;
-    btnCalculate.innerHTML = '<span class="material-symbols-outlined animate-spin">hourglass_empty</span> Calculating...';
+  // Client-side calculation
+  const SI        = (P * R * T) / 100;
+  const maturity  = P + SI;
+  const tax       = SI * TAX_RATE;
 
-    // Send data to server for calculation
-    const response = await fetch('http://localhost:3000/calculate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        P: P,
-        R: R,
-        T: T
-      })
-    });
+  // Effective APY for simple interest = R (constant regardless of time)
+  // For a truly equivalent APY we use: APY = (maturity/P)^(1/T) - 1
+  const apy = T > 0 ? (Math.pow(maturity / P, 1 / T) - 1) * 100 : R;
 
-    const result = await response.json();
+  // Update result card
+  const [whole, dec] = SI.toFixed(2).split(".");
+  elIntWhole.textContent = fmt(parseFloat(whole), 0);
+  elIntDec.textContent   = dec;
+  elMaturity.textContent = fmtCurrency(maturity);
+  elTax.textContent      = fmtCurrency(tax);
+  elApy.textContent      = fmt(apy, 2) + "%";
 
-    if (!response.ok) {
-      throw new Error(result.error || 'Server calculation failed');
-    }
+  // Re-trigger fade-in animation
+  elInterestBlock.querySelector(".result-animate").classList.remove("result-animate");
+  void elInterestBlock.querySelector(".tabular-nums").offsetWidth; // reflow
+  elInterestBlock.querySelector(".tabular-nums")
+    ? elInterestBlock.querySelector(".tabular-nums").classList.add("result-animate")
+    : null;
 
-    const { simpleInterest: SI, totalAmount: maturity } = result.data;
-    const tax = SI * TAX_RATE;
-
-    // Effective APY for simple interest = R (constant regardless of time)
-    // For a truly equivalent APY we use: APY = (maturity/P)^(1/T) - 1
-    const apy = T > 0 ? (Math.pow(maturity / P, 1 / T) - 1) * 100 : R;
-
-    // Update result card
-    const [whole, dec] = SI.toFixed(2).split(".");
-    elIntWhole.textContent = fmt(parseFloat(whole), 0);
-    elIntDec.textContent   = dec;
-    elMaturity.textContent = fmtCurrency(maturity);
-    elTax.textContent      = fmtCurrency(tax);
-    elApy.textContent      = fmt(apy, 2) + "%";
-
-    // Re-trigger fade-in animation
-    elInterestBlock.querySelector(".result-animate").classList.remove("result-animate");
-    void elInterestBlock.querySelector(".tabular-nums").offsetWidth; // reflow
-    elInterestBlock.querySelector(".tabular-nums")
-      ? elInterestBlock.querySelector(".tabular-nums").classList.add("result-animate")
-      : null;
-
-    // Force animation replay on the result number wrapper
-    const numEl = elInterestBlock.querySelector(".text-6xl, .text-7xl");
-    if (numEl) {
-      numEl.classList.remove("result-animate");
-      void numEl.offsetWidth;
-      numEl.classList.add("result-animate");
-    }
-
-    // Sparkline
-    updateSparkline(P, R, T);
-
-    // Persist to history
-    saveHistory({ P, R, rawT, unit, SI, maturity, date: new Date().toISOString() });
-    renderHistory();
-
-    showToast("Calculation completed successfully!");
-
-  } catch (error) {
-    console.error('Calculation error:', error);
-    showToast(`Error: ${error.message}`);
-  } finally {
-    // Reset button state
-    btnCalculate.disabled = false;
-    btnCalculate.innerHTML = '<span class="material-symbols-outlined">calculate</span> Calculate Returns';
+  // Force animation replay on the result number wrapper
+  const numEl = elInterestBlock.querySelector(".text-6xl, .text-7xl");
+  if (numEl) {
+    numEl.classList.remove("result-animate");
+    void numEl.offsetWidth;
+    numEl.classList.add("result-animate");
   }
+
+  // Sparkline
+  updateSparkline(P, R, T);
+
+  // Persist to history
+  saveHistory({ P, R, rawT, unit, SI, maturity, date: new Date().toISOString() });
+  renderHistory();
+
+  showToast("Calculation completed successfully!");
 }
 
 /* ══════════════════════════════════════════════
